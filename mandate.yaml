@@ -1,0 +1,34 @@
+# InvestX mandate — リバランス判断ルール（外出し設定）
+#
+# decision engine (src/decision/rebalance.ts) がこの 1 ファイルを読み込んで判断する。
+# 数値はすべて出発点。R&D 中はここを編集すれば判断が変わる（コード変更不要）。
+
+whitelist:
+  # 対象プロトコルのみ。ここに無いプロトコルへは一切移動しない（構造的に禁止）。
+  - Kamino
+  - Drift
+  - Jupiter Lend
+  - Morpho
+
+move:
+  apy_improvement_min_pct: 2.0    # 今の置き場より APY が +2% 以上高いプールのみ移動を検討
+  require_smart_money: true       # スマートマネー流入が確認できるプールのみ対象
+  min_move_usd: 500               # 移動額の下限（これ未満は動かさない）
+  max_moves_per_day: 1            # 1 日に動かす回数の上限
+  min_hold_hours: 72              # 最低保有時間（再移動のロックアウト）。直近の移動から 72h 未満は再移動しない
+  gain_horizon_hours: 720         # 見込み利得を算定する想定保有期間（既定 30 日）。min_hold_hours とは別物
+  cost_must_be_below_gain: true   # ガス＋スリッページが想定保有期間の見込み利得を上回るなら動かない
+
+allocation_caps:
+  max_pool_pct: 30                # 1 プールへの配分上限（総額比）
+  max_protocol_pct: 50            # 1 プロトコルへの配分上限（総額比）
+  min_usdc_idle_pct: 10           # 総額の 10% 以上は USDC で待機
+
+brakes:
+  pool_tvl_drop_24h_pct: 30       # 保有プールの TVL が 24h で -30% 以上 → 退避（EVACUATE）
+  portfolio_drawdown_pct: 10      # 全体評価額が開始比 -10% 以上 → 全停止＋通知（STOP）
+
+cost_estimate:
+  # 見込みコスト。実ガスは執行時に実測して記録する。R&D 中（executed:false）は見積りのみ記録。
+  gas_usd: 0.50
+  slippage_pct: 0.10              # 移動額に対するスリッページ見込み（%）

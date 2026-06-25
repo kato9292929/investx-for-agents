@@ -1,0 +1,36 @@
+{
+  "name": "investx-for-agents",
+  "version": "0.1.0",
+  "description": "Non-custodial smart-money-following DeFi rebalance agent (R&D). Pays for x402 intelligence endpoints, records every decision to an ERC-8004 agentId. Forked from x402-Autonomous-Agent.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && node dist/index.js",
+    "dev": "ts-node src/index.ts",
+    "run-now": "ts-node src/index.ts --run-now",
+    "dry-run": "ts-node src/scripts/dry-run.ts",
+    "test": "npm run build && node --test dist/__tests__/**/*.test.js"
+  },
+  "dependencies": {
+    "@scure/base": "^1.2.4",
+    "@solana/kit": "^6.9.0",
+    "@types/node": "22.10.7",
+    "@types/node-cron": "3.0.11",
+    "@x402/core": "^2.13.0",
+    "@x402/evm": "^2.13.0",
+    "@x402/fetch": "^2.13.0",
+    "@x402/svm": "^2.15.0",
+    "dotenv": "16.4.7",
+    "node-cron": "3.0.3",
+    "viem": "2.48.11",
+    "yaml": "^2.6.1",
+    "typescript": "5.7.3"
+  },
+  "devDependencies": {
+    "@types/node-cron": "3.0.11",
+    "ts-node": "10.9.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

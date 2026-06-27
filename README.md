@@ -19,14 +19,24 @@ Built on the payment/record/cron plumbing of
 
 ## What it does each run
 
-1. Pays two x402 endpoints (URLs + 402 costs copied from AA's live config):
-   - **Yield Intelligence** (`/api/yield/scan`, $0.20) — candidate-pool APY plus
-     Nansen smart-money inflow.
-   - **Portfolio Intelligence** (`/api/portfolio/analyze`, $0.50, POST) — a
-     self-check of the current allocation.
-2. Parses both **defensively** (the live response schemas are not yet confirmed —
-   see `src/inputs/*`, marked TODO). If no pool reports a positive smart-money
-   inflow, it records **"スマートマネー確認なし"** rather than inventing one.
+1. Pulls inputs from primary sources directly — no self-hosted Yield/Portfolio
+   middle layer:
+   - DeFiLlama `GET https://yields.llama.fi/pools` (free, no key) — candidate-pool
+     APY, TVL, and composition tokens. Filtered to `chain === "Solana"` and
+     whitelisted protocols. `apy` is a percent.
+   - Nansen `POST /smart-money/holdings` (apiKey) — smart-money holdings, which
+     are per **token** (not per pool, not per protocol).
+2. Maps smart money to pools by the pool's composition tokens (`symbol` /
+   `underlyingTokens`): a pool's figure is the sum of its tokens' `value_usd`.
+   This is the smart money sitting in the pool's composition tokens — pools
+   sharing a token share the figure; pool-level differences are never invented.
+   Token-symbol variants are matched only when certain (e.g. WSOL→SOL); anything
+   that does not match cleanly is recorded as smart-money unknown. If nothing
+   matches, the run records **"スマートマネー確認なし"** rather than inventing one.
+   - Current allocation comes from a local holdings file
+     (`config/holdings.json`); if absent it is recorded as unknown, never dummy.
+   - On any source failure (401/402/403/429/non-200/empty) the affected input is
+     recorded as unknown with its status — never filled with a placeholder.
 3. Runs the decision engine (`src/decision/rebalance.ts`) against the rules in
    `mandate.yaml` and emits exactly one decision: `STOP`, `EVACUATE`, `MOVE`, or
    `HOLD`.
@@ -73,13 +83,27 @@ node dist/scripts/erc8004-set-uri.js    # links the agent-card URI on-chain
 node dist/scripts/erc8004-verify.js     # confirms on-chain state
 ```
 
+## Inputs: primary sources
+
+| Source | Call | Auth | Provides |
+|---|---|---|---|
+| DeFiLlama | `GET https://yields.llama.fi/pools` (+ `/chart/{pool}` for the 24h TVL brake) | none | apy, tvlUsd, composition tokens |
+| Nansen | `POST https://api.nansen.ai/api/v1/smart-money/holdings` | `apiKey` | smart-money `value_usd` per token |
+
+Sandbox note: in the Claude Code environment both hosts are egress-blocked, so
+real-data observation is deferred to a Railway deploy (where egress is open).
+The `dry-run` exercises the full mapping/decision/record path with fixtures
+shaped exactly like the confirmed specs.
+
 ## Reused from AA (unchanged plumbing)
 
 `src/x402.ts`, `src/circle/*` (Base = Circle DCW, Solana = SVM exact),
 `src/caller.ts`, `src/store/upstash-rest.ts`, `src/stub-detector.ts`, the
-append-only record mechanism, and the Railway/node-cron runtime. Only the
-decision logic (`src/inputs/*`, `src/decision/*`, `src/mandate.ts`,
-`src/safety/*`) is new.
+append-only record mechanism, and the Railway/node-cron runtime. The x402
+payment client is no longer on the input path (DeFiLlama is free, Nansen uses
+its key) and is kept untouched for the future execute path. New code:
+`src/sources/*` (DeFiLlama + Nansen), `src/inputs/*`, `src/decision/*`,
+`src/mandate.ts`, `src/safety/*`.
 
 ## Local run
 
@@ -90,12 +114,13 @@ cp .env.example .env            # fill in values
 # Offline verification — no payment, no network, no execution.
 # Exercises the real mandate → parse → decide → record path with fixtures and
 # writes to data/decisions/investx-decisions.jsonl under the (provisional) agentId.
-npm run dry-run                 # MOVE scenario
-npm run dry-run -- nosm         # スマートマネー確認なし → HOLD
+npm run dry-run                 # MOVE (smart money matched)
+npm run dry-run -- nosm         # Nansen unavailable → スマートマネー確認なし → HOLD
+npm run dry-run -- nomatch      # tokens don't match a holding → unknown → HOLD
 npm run dry-run -- brake        # held-pool TVL collapse → EVACUATE
 
 npm run build                   # tsc
-npm run run-now                 # one live run (pays the two endpoints)
+npm run run-now                 # one live run (DeFiLlama free + Nansen apiKey)
 npm start                       # cron scheduler (daily 06:00 JST / 21:00 UTC)
 ```
 

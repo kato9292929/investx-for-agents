@@ -12,9 +12,10 @@
  *   3. MOVE     — a whitelisted, smart-money-backed pool clears every gate
  *   4. HOLD     — otherwise, with the reason recorded
  *
- * Every threshold comes from the mandate. Smart money is never fabricated: a
- * pool with no reported inflow is ineligible, and if nothing reports inflow the
- * decision records "スマートマネー確認なし".
+ * Every threshold comes from the mandate. Smart money is never fabricated: it is
+ * token-granularity (Nansen holdings mapped to a pool's composition tokens), so a
+ * pool whose tokens do not match any holding is ineligible, and when nothing
+ * matches the decision records "スマートマネー確認なし".
  */
 import type { Mandate } from "../mandate";
 import { isWhitelisted } from "../mandate";
@@ -77,11 +78,10 @@ function capRoomUsd(
   if (total === undefined || total <= 0) return undefined;
 
   const norm = (s?: string) => (s ?? "").toLowerCase().replace(/\s+/g, "");
-  const destPool = norm(dest.pool);
   const destProto = norm(dest.protocol);
 
   const inPool = portfolio.allocations
-    .filter((a) => norm(a.pool) === destPool && norm(a.protocol) === destProto)
+    .filter((a) => poolMatches(a, dest))
     .reduce((s, a) => s + (a.valueUsd ?? 0), 0);
   const inProto = portfolio.allocations
     .filter((a) => norm(a.protocol) === destProto)
@@ -131,11 +131,8 @@ export function decideRebalance(inputs: {
   }
 
   // ── 2. EVACUATE brake — a held pool's TVL collapsed in 24h ────────────────
-  const norm = (s?: string) => (s ?? "").toLowerCase().replace(/\s+/g, "");
   for (const held of portfolio.allocations) {
-    const match = yieldData.pools.find(
-      (p) => norm(p.pool) === norm(held.pool) && norm(p.protocol) === norm(held.protocol)
-    );
+    const match = yieldData.pools.find((p) => poolMatches(held, p));
     if (
       match?.tvlChange24hPct !== undefined &&
       match.tvlChange24hPct <= -mandate.brakes.poolTvlDrop24hPct
@@ -156,7 +153,7 @@ export function decideRebalance(inputs: {
   if (mandate.move.requireSmartMoney && !yieldData.smartMoneyConfirmed) {
     return {
       ...base,
-      reason: "どの候補プールにもスマートマネー流入が確認できず — 移動しない",
+      reason: "どの候補プールの構成トークンにもスマートマネー保有が確認できず — 移動しない",
       smartMoneySignal: NO_SMART_MONEY,
     };
   }
@@ -171,27 +168,26 @@ export function decideRebalance(inputs: {
 
   for (const p of yieldData.pools) {
     const whitelisted = isWhitelisted(mandate, p.protocol);
-    const smInflow = p.smartMoneyInflowUsd;
-    const hasSmart = smInflow !== undefined && smInflow > 0;
+    const hasSmart = p.smartMoney.available && (p.smartMoney.tokenValueUsd ?? 0) > 0;
     const apyDelta = p.apy !== undefined ? round2(p.apy - referenceApy) : undefined;
 
     if (!whitelisted) {
-      evaluated.push({ ...mini(p), apyDeltaPct: apyDelta, whitelisted: false, verdict: "rejected", note: "whitelist 外" });
+      evaluated.push({ ...evalMini(p), apyDeltaPct: apyDelta, whitelisted: false, verdict: "rejected", note: "whitelist 外" });
       continue;
     }
     if (mandate.move.requireSmartMoney && !hasSmart) {
-      evaluated.push({ ...mini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: NO_SMART_MONEY });
+      evaluated.push({ ...evalMini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: NO_SMART_MONEY });
       continue;
     }
     if (apyDelta === undefined || apyDelta < mandate.move.apyImprovementMinPct) {
-      evaluated.push({ ...mini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: `APY 差 ${apyDelta ?? "?"}% < +${mandate.move.apyImprovementMinPct}%` });
+      evaluated.push({ ...evalMini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: `APY 差 ${apyDelta ?? "?"}% < +${mandate.move.apyImprovementMinPct}%` });
       continue;
     }
 
     // Size the move: source value, clamped by destination caps.
     const sourceUsd = reference?.valueUsd ?? portfolio.totalValueUsd;
     if (sourceUsd === undefined) {
-      evaluated.push({ ...mini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: "移動元の評価額不明（ポートフォリオ未取得）" });
+      evaluated.push({ ...evalMini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: "移動元の評価額不明（ポートフォリオ未取得）" });
       continue;
     }
     // Keep >= min_usdc_idle_pct in idle USDC when the source IS idle USDC.
@@ -213,18 +209,18 @@ export function decideRebalance(inputs: {
           : room !== undefined && room < mandate.move.minMoveUsd
             ? "配分上限に到達"
             : `移動額 $${moveUsd} < 下限 $${mandate.move.minMoveUsd}`;
-      evaluated.push({ ...mini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: why });
+      evaluated.push({ ...evalMini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: why });
       continue;
     }
 
     const cost = estimateCost(mandate, moveUsd);
     const gain = projectedGain(mandate, moveUsd, apyDelta);
     if (mandate.move.costMustBeBelowGain && cost.totalUsd >= gain) {
-      evaluated.push({ ...mini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: `コスト $${cost.totalUsd} >= 見込み利得 $${gain}（${mandate.move.gainHorizonHours}h）` });
+      evaluated.push({ ...evalMini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "rejected", note: `コスト $${cost.totalUsd} >= 見込み利得 $${gain}（${mandate.move.gainHorizonHours}h）` });
       continue;
     }
 
-    evaluated.push({ ...mini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "selected", note: "全ゲート通過（候補）" });
+    evaluated.push({ ...evalMini(p), apyDeltaPct: apyDelta, whitelisted: true, verdict: "selected", note: "全ゲート通過（候補）" });
     if (!best || apyDelta > best.apyDeltaPct) {
       best = { pool: p, apyDeltaPct: apyDelta, moveUsd, cost, gain };
     }
@@ -245,7 +241,7 @@ export function decideRebalance(inputs: {
       reason: `本日の移動回数が上限 (${mandate.move.maxMovesPerDay}) に到達 — 見送り`,
       smartMoneySignal: smartSignalText(best.pool),
       apyDeltaPct: best.apyDeltaPct,
-      to: mini(best.pool),
+      to: destSnapshot(best.pool),
     };
   }
   if (history.lastMoveAt && hoursBetween(nowIso, history.lastMoveAt) < mandate.move.minHoldHours) {
@@ -255,21 +251,21 @@ export function decideRebalance(inputs: {
       reason: `直近の移動から ${held}h（最低保有 ${mandate.move.minHoldHours}h 未満）— 見送り`,
       smartMoneySignal: smartSignalText(best.pool),
       apyDeltaPct: best.apyDeltaPct,
-      to: mini(best.pool),
+      to: destSnapshot(best.pool),
     };
   }
 
   return {
     action: "MOVE",
     reason:
-      `${best.pool.protocol}/${best.pool.pool} へ移動 — APY 差 +${best.apyDeltaPct}% ` +
+      `${best.pool.protocol}/${best.pool.symbol} へ移動 — APY 差 +${best.apyDeltaPct}% ` +
       `(基準 ${round2(referenceApy)}% → ${best.pool.apy}%)、見込み利得 $${best.gain} > コスト $${best.cost.totalUsd}`,
     smartMoneySignal: smartSignalText(best.pool),
     apyDeltaPct: best.apyDeltaPct,
     from: reference
       ? { protocol: reference.protocol, pool: reference.pool, valueUsd: reference.valueUsd, apy: reference.apy }
       : undefined,
-    to: mini(best.pool),
+    to: destSnapshot(best.pool),
     moveUsd: best.moveUsd,
     estimatedCost: best.cost,
     projectedGainUsd: best.gain,
@@ -277,11 +273,40 @@ export function decideRebalance(inputs: {
   };
 }
 
-function mini(p: YieldPool): Pick<YieldPool, "protocol" | "pool" | "apy" | "smartMoneyInflowUsd"> {
-  return { protocol: p.protocol, pool: p.pool, apy: p.apy, smartMoneyInflowUsd: p.smartMoneyInflowUsd };
+/** Match a held allocation to a yield pool (by poolId if known, else protocol+symbol). */
+function poolMatches(a: Allocation, p: YieldPool): boolean {
+  if (a.poolId && p.poolId && a.poolId === p.poolId) return true;
+  const n = (s?: string) => (s ?? "").toLowerCase().replace(/\s+/g, "");
+  return n(a.protocol) === n(p.protocol) && n(a.pool) === n(p.symbol);
+}
+
+/** Candidate audit row (token-granularity smart money, named honestly). */
+function evalMini(p: YieldPool): Pick<CandidateEval, "protocol" | "symbol" | "apy" | "smartMoneyTokenValueUsd" | "smartMoneyAvailable"> {
+  return {
+    protocol: p.protocol,
+    symbol: p.symbol,
+    apy: p.apy,
+    smartMoneyTokenValueUsd: p.smartMoney.tokenValueUsd,
+    smartMoneyAvailable: p.smartMoney.available,
+  };
+}
+
+/** Destination snapshot recorded with the decision (carries the smart-money detail). */
+function destSnapshot(p: YieldPool) {
+  return {
+    protocol: p.protocol,
+    poolId: p.poolId,
+    symbol: p.symbol,
+    apy: p.apy,
+    tvlUsd: p.tvlUsd,
+    smartMoney: p.smartMoney,
+  };
 }
 
 function smartSignalText(p: YieldPool): string {
-  if (p.smartMoneyInflowUsd === undefined) return NO_SMART_MONEY;
-  return `${p.protocol ?? "?"}/${p.pool ?? "?"} スマートマネー流入 $${round2(p.smartMoneyInflowUsd)}`;
+  if (!p.smartMoney.available || p.smartMoney.tokenValueUsd === undefined) return NO_SMART_MONEY;
+  return (
+    `${p.protocol ?? "?"}/${p.symbol ?? "?"} 構成トークンのスマートマネー保有額 ` +
+    `$${round2(p.smartMoney.tokenValueUsd)}（token 粒度）`
+  );
 }

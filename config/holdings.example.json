@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy to config/holdings.json (or set INVESTX_HOLDINGS_PATH) to give the engine the current allocation. Absent file => portfolio is recorded as unknown, never dummy. poolId is the DeFiLlama pool id (used for the 24h TVL brake).",
+  "totalValueUsd": 10000,
+  "positions": [
+    { "protocol": "drift", "poolId": "", "symbol": "USDC", "valueUsd": 3000, "apy": 5.0, "openedAt": "2026-06-01T00:00:00Z" },
+    { "protocol": "kamino", "poolId": "", "symbol": "USDC", "valueUsd": 4000, "apy": 6.0, "openedAt": "2026-06-10T00:00:00Z" },
+    { "protocol": "USDC", "pool": "idle", "valueUsd": 3000, "apy": 0 }
+  ]
+}

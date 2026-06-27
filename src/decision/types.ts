@@ -1,4 +1,4 @@
-import type { YieldPool } from "../inputs/yield";
+import type { YieldPool, SmartMoneyMatch } from "../inputs/yield";
 import type { Allocation } from "../inputs/portfolio";
 
 export type RebalanceAction = "MOVE" | "HOLD" | "EVACUATE" | "STOP";
@@ -22,13 +22,25 @@ export interface EstimatedCost {
 /** One candidate pool considered by the engine, with why it was kept/rejected. */
 export interface CandidateEval {
   protocol?: string;
-  pool?: string;
+  symbol?: string;
   apy?: number;
   apyDeltaPct?: number;
-  smartMoneyInflowUsd?: number;
+  /** Smart-money holding USD of the pool's composition tokens (token granularity). */
+  smartMoneyTokenValueUsd?: number;
+  smartMoneyAvailable: boolean;
   whitelisted: boolean;
   verdict: "selected" | "rejected";
   note: string;
+}
+
+/** Destination pool snapshot recorded with the decision. */
+export interface DestinationSnapshot {
+  protocol?: string;
+  poolId?: string;
+  symbol?: string;
+  apy?: number;
+  tvlUsd?: number;
+  smartMoney?: SmartMoneyMatch;
 }
 
 export interface RebalanceDecision {
@@ -38,10 +50,13 @@ export interface RebalanceDecision {
   smartMoneySignal: string;
   apyDeltaPct: number | null;
   from?: Pick<Allocation, "protocol" | "pool" | "valueUsd" | "apy">;
-  to?: Pick<YieldPool, "protocol" | "pool" | "apy" | "smartMoneyInflowUsd">;
+  to?: DestinationSnapshot;
   moveUsd: number | null;
   estimatedCost: EstimatedCost | null;
-  /** Projected yield gain over the min-hold window, USD (for the cost gate). */
+  /** Projected yield gain over the holding horizon, USD (for the cost gate). */
   projectedGainUsd: number | null;
   evaluated: CandidateEval[];
 }
+
+// re-export for convenience
+export type { YieldPool };

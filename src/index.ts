@@ -10,13 +10,15 @@
  */
 import "dotenv/config";
 import cron from "node-cron";
-import { initX402Fetch } from "./x402";
 import { runRebalance } from "./run";
 import { startHttpServer } from "./server";
 
+// Note: inputs now come from DeFiLlama (free) + Nansen (apiKey), so the x402
+// payment client is not initialised on the input path. The reused x402 client
+// (src/x402.ts, src/circle/*) is kept untouched for the future execute path.
+
 async function main(): Promise<void> {
   startHttpServer();
-  await initX402Fetch();
 
   // Daily at 06:00 JST (21:00 UTC) — same schedule as AA's daily run.
   cron.schedule("0 21 * * *", async () => {

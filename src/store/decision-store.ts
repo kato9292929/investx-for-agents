@@ -31,10 +31,25 @@ export interface RebalanceRecord {
   agentId: string; // this agent's ERC-8004 agentId (NOT AA's 55560)
   agentIdProvisional: boolean; // true while using a placeholder id pre-registration
   agentRegistry?: string; // ERC-8004 registry CAIP-10, for traceability
-  // input snapshot
+  // input snapshot (primary sources: DeFiLlama + Nansen, and local holdings)
   inputSnapshot: {
-    yield: { available: boolean; poolCount: number; smartMoneyConfirmed: boolean; peek?: string };
-    portfolio: { available: boolean; totalValueUsd?: number; allocationCount: number; peek?: string };
+    yield: {
+      available: boolean;
+      source: string; // "defillama+nansen"
+      poolCount: number; // whitelisted+chain-filtered pools considered
+      smartMoneyConfirmed: boolean;
+      llama: { ok: boolean; status: number; totalPoolCount: number };
+      nansen: { ok: boolean; status: number; note: string };
+      peek?: string;
+    };
+    portfolio: {
+      available: boolean;
+      source: string; // "local-holdings" | "unavailable"
+      totalValueUsd?: number;
+      allocationCount: number;
+      note?: string;
+      peek?: string;
+    };
   };
   // the decision
   action: RebalanceDecision["action"];
@@ -80,14 +95,27 @@ export function buildRecord(args: {
     inputSnapshot: {
       yield: {
         available: yieldData.available,
+        source: yieldData.source,
         poolCount: yieldData.pools.length,
         smartMoneyConfirmed: yieldData.smartMoneyConfirmed,
+        llama: {
+          ok: yieldData.llama.ok,
+          status: yieldData.llama.status,
+          totalPoolCount: yieldData.llama.poolCount,
+        },
+        nansen: {
+          ok: yieldData.nansen.ok,
+          status: yieldData.nansen.status,
+          note: yieldData.nansen.note,
+        },
         peek: yieldData.peek,
       },
       portfolio: {
         available: portfolio.available,
+        source: portfolio.source,
         totalValueUsd: portfolio.totalValueUsd,
         allocationCount: portfolio.allocations.length,
+        note: portfolio.note,
         peek: portfolio.peek,
       },
     },

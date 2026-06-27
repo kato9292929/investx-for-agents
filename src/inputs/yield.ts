@@ -1,103 +1,183 @@
 /**
- * Yield Intelligence input parser.
+ * Yield input — built from DeFiLlama pools + Nansen smart-money holdings.
  *
- * Pulls candidate pools out of the Yield Intelligence response: APY, TVL (and
- * 24h change for the brake), and the Nansen smart-money inflow per pool.
+ * Replaces the old self-hosted Yield Intelligence endpoint. Pools come from
+ * DeFiLlama (apy/tvl/composition), smart money from Nansen.
  *
- * TODO(schema): the live shape of https://x402yi.vercel.app/api/yield/scan is
- * not confirmed from this environment. Parsing is defensive — it scans the
- * object tree for any pool-like node carrying an APY field and reads the other
- * fields by name + obvious variants. Missing fields stay undefined; we never
- * fabricate an APY or a smart-money number.
+ * Smart-money mapping (granularity is honest, not inflated):
+ *   - Nansen holdings are per TOKEN. A pool's smart-money figure is the sum of
+ *     its composition tokens' value_usd. This is "how much smart money sits in
+ *     the pool's composition tokens", NOT a pool-specific inflow. Pools sharing
+ *     a token therefore share the same figure — we do not invent pool-level
+ *     differences.
+ *   - token_symbol spelling variants are matched only when certain (e.g.
+ *     WSOL→SOL). Anything that does not match cleanly is left as "smart money
+ *     unknown" — never fabricated, never force-matched (e.g. USDC vs USDbC are
+ *     NOT treated as the same token).
  *
- * Smart money: if a pool has no inflow field at all, smartMoneyInflowUsd stays
- * undefined and the decision engine records "スマートマネー確認なし" for it —
- * it is never back-filled with a guessed value.
+ * apy is kept in percent (DeFiLlama convention; mandate thresholds are percent).
  */
-import { walkObjects, firstKey, asNumber, asString } from "./walk";
+import type { LlamaPool } from "../sources/defillama";
+import type { NansenResult, NansenHolding } from "../sources/nansen";
+
+export interface SmartMoneyMatch {
+  available: boolean; // a composition token matched a Nansen holding
+  tokenValueUsd?: number; // sum of matched tokens' value_usd (token granularity)
+  matchedTokens: { symbol: string; valueUsd?: number; sharePct?: number }[];
+  note: string; // honest description of what this figure is / why unknown
+}
 
 export interface YieldPool {
-  protocol?: string;
-  pool?: string;
-  apy?: number; // percent, e.g. 7.4 means 7.4%
+  protocol?: string; // DeFiLlama project slug
+  poolId?: string; // DeFiLlama pool id
+  symbol?: string; // composition tokens, e.g. "USDC-SOL"
+  apy?: number; // percent
+  apyBase?: number;
+  apyReward?: number;
   tvlUsd?: number;
-  tvlChange24hPct?: number;
-  smartMoneyInflowUsd?: number; // Nansen smart-money net inflow (undefined = not reported)
+  tvlChange24hPct?: number; // from /chart enrichment; undefined = not known
   chain?: string;
+  underlyingTokens?: string[];
+  symbolTokens?: string[]; // parsed from `symbol`, normalized
+  smartMoney: SmartMoneyMatch;
 }
 
 export interface YieldData {
   available: boolean;
+  source: "defillama+nansen";
   pools: YieldPool[];
-  /** true iff at least one pool reports a positive smart-money inflow. */
-  smartMoneyConfirmed: boolean;
+  smartMoneyConfirmed: boolean; // some pool has a matched token with value > 0
+  llama: { ok: boolean; status: number; poolCount: number };
+  nansen: { ok: boolean; status: number; note: string };
   peek?: string;
 }
 
-const APY_KEYS = ["apy", "apyPct", "apy_pct", "netApy", "supplyApy", "totalApy", "apyBase"];
-const PROTOCOL_KEYS = ["protocol", "project", "platform", "protocolName", "provider"];
-const POOL_KEYS = ["pool", "poolName", "market", "symbol", "name", "asset", "poolId"];
-const TVL_KEYS = ["tvlUsd", "tvl", "tvl_usd", "totalValueLockedUsd", "totalValueLocked"];
-const TVL_CHANGE_KEYS = [
-  "tvlChange24hPct",
-  "tvlChange24h",
-  "tvlChangePct24h",
-  "tvlChange_24h",
-  "tvl24hChangePct",
-];
-const SMART_MONEY_KEYS = [
-  "smartMoneyInflowUsd",
-  "smartMoneyInflow",
-  "smartMoneyNetFlowUsd",
-  "nansenInflowUsd",
-  "nansenNetFlowUsd",
-  "nansenSmartMoneyInflow",
-  "inflowUsd",
-];
-const CHAIN_KEYS = ["chain", "network", "blockchain"];
+// Only certain spelling variants are unified. Uncertain ones are left to miss.
+const SYMBOL_ALIASES: Record<string, string> = {
+  WSOL: "SOL",
+  WETH: "ETH",
+  WBTC: "BTC",
+};
 
-function parsePool(obj: Record<string, unknown>): YieldPool | undefined {
-  const apyHit = firstKey(obj, APY_KEYS);
-  if (!apyHit) return undefined;
-  const apy = asNumber(apyHit.value);
-  if (apy === undefined) return undefined;
+export function normalizeSymbol(sym: string): string {
+  const up = sym.trim().toUpperCase();
+  return SYMBOL_ALIASES[up] ?? up;
+}
 
+/** Split a DeFiLlama composition symbol ("USDC-SOL", "USDC/SOL") into tokens. */
+export function splitSymbol(symbol: string | undefined): string[] {
+  if (!symbol) return [];
+  return symbol
+    .split(/[-/\s+]/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "")
+    .map(normalizeSymbol);
+}
+
+/** Index Nansen holdings by normalized token_symbol (keep the largest value). */
+function indexHoldings(holdings: NansenHolding[]): Map<string, NansenHolding> {
+  const map = new Map<string, NansenHolding>();
+  for (const h of holdings) {
+    if (!h.token_symbol) continue;
+    const key = normalizeSymbol(h.token_symbol);
+    const existing = map.get(key);
+    if (!existing || (h.value_usd ?? 0) > (existing.value_usd ?? 0)) map.set(key, h);
+  }
+  return map;
+}
+
+function matchSmartMoney(
+  symbolTokens: string[],
+  nansen: NansenResult,
+  index: Map<string, NansenHolding>
+): SmartMoneyMatch {
+  if (!nansen.ok) {
+    return {
+      available: false,
+      matchedTokens: [],
+      note: `スマートマネー不明（Nansen 取得失敗: status=${nansen.status}${nansen.error ? ` ${nansen.error}` : ""}）`,
+    };
+  }
+  const matched: SmartMoneyMatch["matchedTokens"] = [];
+  for (const t of symbolTokens) {
+    const h = index.get(t);
+    if (h) matched.push({ symbol: t, valueUsd: h.value_usd, sharePct: h.share_of_holdings_percent });
+  }
+  if (matched.length === 0) {
+    return {
+      available: false,
+      matchedTokens: [],
+      note: "スマートマネー不明（構成トークンが Nansen holdings に一致せず）",
+    };
+  }
+  const tokenValueUsd = matched.reduce((s, m) => s + (m.valueUsd ?? 0), 0);
   return {
-    protocol: asString(firstKey(obj, PROTOCOL_KEYS)?.value),
-    pool: asString(firstKey(obj, POOL_KEYS)?.value),
-    apy,
-    tvlUsd: asNumber(firstKey(obj, TVL_KEYS)?.value),
-    tvlChange24hPct: asNumber(firstKey(obj, TVL_CHANGE_KEYS)?.value),
-    smartMoneyInflowUsd: asNumber(firstKey(obj, SMART_MONEY_KEYS)?.value),
-    chain: asString(firstKey(obj, CHAIN_KEYS)?.value),
+    available: true,
+    tokenValueUsd,
+    matchedTokens: matched,
+    note: "token 粒度: 構成トークンのスマートマネー保有額（プール固有の流入ではない）",
   };
 }
 
-export function parseYieldData(
-  data: Record<string, unknown> | undefined | null
-): YieldData {
-  if (!data) return { available: false, pools: [], smartMoneyConfirmed: false };
+/** Is this DeFiLlama project on the whitelist? (normalized, tolerant of slug vs name) */
+function projectWhitelisted(project: string | undefined, whitelist: string[]): boolean {
+  if (!project) return false;
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, "");
+  const p = norm(project);
+  return whitelist.some((w) => {
+    const wl = norm(w);
+    return p === wl || wl.startsWith(p) || p.startsWith(wl);
+  });
+}
 
-  const pools: YieldPool[] = [];
-  const seen = new Set<string>();
-  for (const obj of walkObjects(data)) {
-    const pool = parsePool(obj);
-    if (!pool) continue;
-    // de-dup on protocol+pool+apy so a node walked twice isn't double-counted
-    const key = `${pool.protocol ?? "?"}|${pool.pool ?? "?"}|${pool.apy}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    pools.push(pool);
-  }
+/**
+ * Build YieldData from raw DeFiLlama pools + Nansen holdings, filtered to the
+ * target chain and whitelisted protocols. The decision engine consumes this.
+ */
+export function buildYieldData(
+  llama: { ok: boolean; status: number; pools: LlamaPool[] },
+  nansen: NansenResult,
+  opts: { whitelist: string[]; chain: string }
+): YieldData {
+  const index = indexHoldings(nansen.holdings);
+  const chainNorm = opts.chain.toLowerCase();
+
+  const filtered = llama.pools.filter(
+    (p) => (p.chain ?? "").toLowerCase() === chainNorm && projectWhitelisted(p.project, opts.whitelist)
+  );
+
+  const pools: YieldPool[] = filtered.map((p) => {
+    const symbolTokens = splitSymbol(p.symbol);
+    return {
+      protocol: p.project,
+      poolId: p.pool,
+      symbol: p.symbol,
+      apy: p.apy,
+      apyBase: p.apyBase,
+      apyReward: p.apyReward,
+      tvlUsd: p.tvlUsd,
+      chain: p.chain,
+      underlyingTokens: p.underlyingTokens,
+      symbolTokens,
+      smartMoney: matchSmartMoney(symbolTokens, nansen, index),
+    };
+  });
 
   const smartMoneyConfirmed = pools.some(
-    (p) => p.smartMoneyInflowUsd !== undefined && p.smartMoneyInflowUsd > 0
+    (p) => p.smartMoney.available && (p.smartMoney.tokenValueUsd ?? 0) > 0
   );
+
+  const nansenNote = nansen.ok
+    ? `ok (${nansen.holdings.length} holdings)`
+    : `unavailable (status=${nansen.status}${nansen.error ? ` ${nansen.error}` : ""})`;
 
   return {
     available: pools.length > 0,
+    source: "defillama+nansen",
     pools,
     smartMoneyConfirmed,
-    peek: JSON.stringify(data).slice(0, 200),
+    llama: { ok: llama.ok, status: llama.status, poolCount: llama.pools.length },
+    nansen: { ok: nansen.ok, status: nansen.status, note: nansenNote },
+    peek: JSON.stringify(pools.slice(0, 3)).slice(0, 300),
   };
 }

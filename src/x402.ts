@@ -44,7 +44,34 @@ function buildEvmScheme(): ExactEvmScheme {
   return new ExactEvmScheme(toClientEvmSigner(account));
 }
 
+/** True iff an EVM signer is configured (private key, or Circle wallet env). */
+function hasEvmSignerConfigured(): boolean {
+  const backend = process.env.SIGNER_BACKEND ?? "privatekey";
+  if (backend === "circle") {
+    return Boolean(process.env.CIRCLE_EVM_WALLET_ID && process.env.CIRCLE_EVM_WALLET_ADDRESS);
+  }
+  return Boolean(process.env.PAYMENT_PRIVATE_KEY);
+}
+
+/**
+ * Initialise the x402 payment fetch wrapper. This is for the future execute
+ * path ONLY — InvestX inputs (DeFiLlama/Nansen) use the plain global fetch and
+ * never call this. It is intentionally NOT invoked at startup.
+ *
+ * Defensive guard: if no signer is configured it logs and returns instead of
+ * throwing, so the process can never crash at boot over a missing payment key
+ * (even if some stale build were to call it). When execute is wired, call this
+ * only after confirming a signer is present.
+ */
 export async function initX402Fetch(): Promise<void> {
+  if (!hasEvmSignerConfigured()) {
+    console.warn(
+      "[X402] No EVM signer configured (PAYMENT_PRIVATE_KEY / SIGNER_BACKEND=circle). " +
+        "x402 payment left uninitialised — inputs do not need it; the execute path will."
+    );
+    return;
+  }
+
   const evmScheme = buildEvmScheme();
   const maxUsdc = DEFAULT_MAX_BASE_MICRO_USDC;
 

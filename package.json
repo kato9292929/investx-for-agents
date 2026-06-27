@@ -4,7 +4,7 @@
   "description": "Non-custodial smart-money-following DeFi rebalance agent (R&D). Pays for x402 intelligence endpoints, records every decision to an ERC-8004 agentId. Forked from x402-Autonomous-Agent.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "start": "npm run build && node dist/index.js",
     "dev": "ts-node src/index.ts",
     "run-now": "ts-node src/index.ts --run-now",

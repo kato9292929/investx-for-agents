@@ -1,7 +1,7 @@
 {
   "name": "investx-for-agents",
   "version": "0.1.0",
-  "description": "Non-custodial smart-money-following DeFi rebalance agent (R&D). Reads DeFiLlama + Nansen directly, records every decision to an ERC-8004 agentId. No payment/signing dependencies.",
+  "description": "Non-custodial smart-money-following DeFi rebalance agent (R&D). Reads DeFiLlama + Nansen directly, records every decision to an ERC-8004 agentId. Kamino in-wallet rebalance execution via @solana/kit (no x402/Circle).",
   "main": "dist/index.js",
   "scripts": {
     "build": "rm -rf dist && tsc",
@@ -11,6 +11,9 @@
     "dry-run": "ts-node src/scripts/dry-run.ts"
   },
   "dependencies": {
+    "@kamino-finance/klend-sdk": "9.1.2",
+    "@solana/kit": "2.3.0",
+    "decimal.js": "10.6.0",
     "dotenv": "16.4.7",
     "node-cron": "3.0.3",
     "typescript": "5.7.3",

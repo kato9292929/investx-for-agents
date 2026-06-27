@@ -160,5 +160,5 @@ export async function runRebalance(): Promise<void> {
 
   log.durationMs = Date.now() - startMs;
   logRun(log);
-  console.log(`[RUN] Complete. Inputs: DeFiLlama(${llama.status}) Nansen(${nansen.status}); $0 x402 spent`);
+  console.log(`[RUN] Complete. Inputs: DeFiLlama(${llama.status}) Nansen(${nansen.status}); no payment (DeFiLlama free, Nansen apiKey)`);
 }

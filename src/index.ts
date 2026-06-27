@@ -4,12 +4,9 @@
  * Railway always-on process: starts the HTTP server and schedules the daily
  * rebalance run via node-cron. `--run-now` triggers one run immediately.
  *
- * The x402 payment client is intentionally NOT initialised at startup. Inputs
- * come from DeFiLlama (free) + Nansen (apiKey) fetched with the plain global
- * fetch, so the agent boots with no PAYMENT_PRIVATE_KEY / SIGNER_BACKEND /
- * Circle env. The reused x402 client (src/x402.ts, src/circle/*) stays in the
- * repo untouched for the future execute path, where it will be initialised on
- * demand — never at boot.
+ * There are no payment/signing dependencies. Inputs come from DeFiLlama (free)
+ * and Nansen (apiKey header) over the plain global fetch, so the agent boots
+ * with no wallet keys — a missing key can never crash startup.
  *
  * Execution is not wired: every run records a decision with executed:false.
  */

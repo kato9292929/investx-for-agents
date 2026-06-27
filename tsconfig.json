@@ -10,14 +10,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "baseUrl": ".",
-    "paths": {
-      "@x402/fetch": ["node_modules/@x402/fetch/dist/cjs/index"],
-      "@x402/core/types": ["node_modules/@x402/core/dist/cjs/types/index"],
-      "@x402/core/client": ["node_modules/@x402/core/dist/cjs/client/index"],
-      "@x402/core/http": ["node_modules/@x402/core/dist/cjs/http/index"],
-      "@x402/svm/exact/client": ["node_modules/@x402/svm/dist/cjs/exact/client/index"]
-    }
+    "baseUrl": "."
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

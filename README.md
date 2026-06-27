@@ -7,9 +7,11 @@ move-by-move decision log tied to this agent's own ERC-8004 agentId.
 
 スマートマネーが資金を置いている場所を追って、自己資金を DeFi 利回りに自動リバランスする非カストディなエージェントです。狙いは収益ではなく、改竄できない一手ごとの公開記録（このエージェント専用の新規 agentId に紐づくログ）を作ること。記録が成果物です。失っていい額で回します。
 
-Built on the payment/record/cron plumbing of
+No payment or signing dependencies: inputs are read directly from DeFiLlama
+(free) and Nansen (apiKey). The cron/runtime shape follows
 [x402-Autonomous-Agent](https://github.com/kato9292929/x402-Autonomous-Agent-)
-(the AA repo); only the decision logic is new.
+(the AA repo), but the x402/Circle/wallet payment stack was removed — it is not
+needed here and was the cause of past startup crashes.
 
 > Status: R&D. Execution is **not** wired. Every run records a decision with
 > `executed: false` — what the agent decided, never a fill, gas, or P&L. Live
@@ -70,18 +72,17 @@ hard-codes nothing. Starting values:
 
 ## Identity (ERC-8004)
 
-This agent registers its **own** agentId — fully separate from AA's `55560` —
-and records to its own store key (`investx_daily`), never AA's
-`trade_agent_daily`. Until registration is done, a provisional id
-(`investx-provisional-001`) is used and records are stamped
-`agentIdProvisional: true`.
+Records are tied to this agent's **own** agentId — fully separate from AA's
+`55560` — under its own store key (`investx_daily`), never AA's
+`trade_agent_daily`. Set `INVESTX_AGENT_ID` to the agent's id; until then a
+provisional id (`investx-provisional-001`) is used and records are stamped
+`agentIdProvisional: true`. The registry constant lives in
+`src/erc8004/contract.ts` and is recorded as `agentRegistry` on every decision.
 
-```
-node dist/scripts/erc8004-register.js   # mints INVESTX_AGENT_ID
-# set INVESTX_AGENT_ID, redeploy
-node dist/scripts/erc8004-set-uri.js    # links the agent-card URI on-chain
-node dist/scripts/erc8004-verify.js     # confirms on-chain state
-```
+On-chain ERC-8004 registration is not included here: the previous register
+scripts required Circle signing, which was removed with the payment stack.
+When a real execute/signing path is added, registration will be done there and
+`INVESTX_AGENT_ID` set to the minted id. (TODO)
 
 ## Inputs: primary sources
 
@@ -95,15 +96,20 @@ real-data observation is deferred to a Railway deploy (where egress is open).
 The `dry-run` exercises the full mapping/decision/record path with fixtures
 shaped exactly like the confirmed specs.
 
-## Reused from AA (unchanged plumbing)
+## Payment stack: removed
 
-`src/x402.ts`, `src/circle/*` (Base = Circle DCW, Solana = SVM exact),
-`src/caller.ts`, `src/store/upstash-rest.ts`, `src/stub-detector.ts`, the
-append-only record mechanism, and the Railway/node-cron runtime. The x402
-payment client is no longer on the input path (DeFiLlama is free, Nansen uses
-its key) and is kept untouched for the future execute path. New code:
-`src/sources/*` (DeFiLlama + Nansen), `src/inputs/*`, `src/decision/*`,
-`src/mandate.ts`, `src/safety/*`.
+InvestX has no x402 / Circle / wallet-signing code. The earlier build copied
+that payment plumbing from AA on the input path; it was unused (DeFiLlama is
+free, Nansen uses an apiKey) and its startup initialisation repeatedly crashed
+Railway, so it was deleted entirely. Runtime dependencies are just `node-cron`,
+`dotenv`, and `yaml`. From AA only the ERC-8004 registry constants
+(`src/erc8004/contract.ts`, for the agentId record field) and the cron/Railway
+runtime shape remain. All other code is new: `src/sources/*` (DeFiLlama +
+Nansen), `src/inputs/*`, `src/decision/*`, `src/mandate.ts`, `src/safety/*`,
+`src/store/decision-store.ts`.
+
+If a real execute path is added later, payment/signing will be built then —
+isolated, and never initialised at startup.
 
 ## Local run
 

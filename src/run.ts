@@ -1,12 +1,11 @@
 /**
- * One rebalance run: pull inputs from primary sources (DeFiLlama + Nansen),
- * map smart money to pools, decide, record. Execution is not wired — every
- * record is executed:false.
+ * One rebalance run: pull inputs (DeFiLlama + Nansen), map smart money to pools,
+ * decide, record, and — when configured — execute a Kamino in-wallet rebalance.
  *
- * Inputs no longer go through the self-hosted Yield / Portfolio Intelligence
- * endpoints. DeFiLlama is free (no payment); Nansen uses apiKey auth (its own
- * credit/x402 billing, handled by the key — no x402 signing here). The reused
- * x402 payment client is untouched and kept for the future execute path.
+ * Inputs use the plain global fetch (DeFiLlama free, Nansen apiKey); there is no
+ * payment client. Kamino execution is loaded lazily and gated by EXECUTE_ENABLED
+ * + a mandatory simulate. With execution unconfigured or off, the run stops at
+ * decision+record (executed:false), exactly as before.
  */
 import { fetchLlamaPools, fetchLlamaPoolChart, tvlChange24hPct } from "./sources/defillama";
 import { fetchNansenHoldings } from "./sources/nansen";
@@ -17,7 +16,13 @@ import { loadMandate } from "./mandate";
 import { decideRebalance } from "./decision/rebalance";
 import { resolveIdentity } from "./identity";
 import { appendDecision, buildRecord, readHistory } from "./store/decision-store";
+import type { KaminoExecResult } from "./execute/kamino";
+import { executionConfigured, EXECUTE_ENABLED } from "./execute/config";
 import { sendBrakeNotification } from "./notify";
+
+// klend-sdk and @solana/kit are loaded ONLY here, lazily, when execution is
+// configured — never at module load. This keeps them off the startup path so a
+// missing key / SDK packaging issue can never crash boot or the daily loop.
 import type { RunLog, EndpointResult } from "./types";
 import { logRun } from "./logger";
 
@@ -54,7 +59,7 @@ function sourceResult(
     endpoint,
     product,
     status: ok ? "success" : "error",
-    costUsdc: 0, // DeFiLlama free; Nansen billed via its own key, not x402 here
+    costUsdc: 0, // DeFiLlama free; Nansen billed via its own key
     responsePeek: peek,
     error,
     durationMs,
@@ -127,9 +132,33 @@ export async function runRebalance(): Promise<void> {
     console.log(`[RUN] 現在配置 不明 — ${portfolio.note ?? "holdings unavailable"}`);
   }
 
-  // ── Decide (records executed:false; no funds move) ────────────────────────
+  // ── Decide ────────────────────────────────────────────────────────────────
   const history = readHistory();
   const decision = decideRebalance({ yield: yieldData, portfolio, mandate, history });
+
+  // ── Execute (Kamino in-wallet rebalance) ──────────────────────────────────
+  // Off unless KAMINO vaults + RPC are configured. EXECUTE_ENABLED=false stops
+  // after simulate. This NEVER breaks the daily loop: any failure is caught,
+  // recorded as unknown, and the decision/record still completes (executed:false).
+  let execution: KaminoExecResult | undefined;
+  if (executionConfigured()) {
+    console.log(`[RUN] Kamino execution path (EXECUTE_ENABLED=${EXECUTE_ENABLED})`);
+    try {
+      const { executeKaminoRebalance } = await import("./execute/kamino");
+      execution = await executeKaminoRebalance();
+      console.log(
+        `[RUN] Kamino exec — attempted=${execution.attempted} rpc=${execution.rpcReachable} ` +
+          `simulated=${execution.simulated} executed=${execution.executed}${execution.txHash ? ` tx=${execution.txHash}` : ""}`
+      );
+      console.log(`[RUN] Kamino note: ${execution.note}`);
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err);
+      log.errors.push(`Kamino execution: ${m}`);
+      console.error(`[RUN] Kamino execution error (loop continues): ${m}`);
+    }
+  } else {
+    console.log("[RUN] Kamino execution not configured (SOLANA_RPC_URL/KAMINO_FROM_VAULT/KAMINO_TO_VAULT) — decision/record only");
+  }
 
   const record = buildRecord({
     agentId: identity.agentId,
@@ -139,6 +168,7 @@ export async function runRebalance(): Promise<void> {
     yield: yieldData,
     portfolio,
     inputCostUsdc: log.totalCostUsdc,
+    execution,
   });
 
   try {
@@ -151,7 +181,7 @@ export async function runRebalance(): Promise<void> {
 
   console.log(
     `[RUN] Decision — ${decision.action} | ${decision.reason} ` +
-      `[agentId=${identity.agentId}${identity.provisional ? " (provisional)" : ""}, executed=false]`
+      `[agentId=${identity.agentId}${identity.provisional ? " (provisional)" : ""}, executed=${record.executed}]`
   );
 
   if (decision.action === "STOP" || decision.action === "EVACUATE") {

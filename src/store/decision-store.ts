@@ -6,7 +6,7 @@
  * hits, misses, and HOLDs all stay, so the public log is a tamper-evident,
  * move-by-move history.
  *
- * This is deliberately a SEPARATE store from x402-Autonomous-Agent's
+ * This is deliberately a SEPARATE store from the upstream AA repo's
  * `trade_agent_daily:55560`. InvestX uses its own key prefix (`investx_daily`)
  * and its own local file, fully decoupled from AA's identity and data.
  *
@@ -22,6 +22,7 @@ import * as path from "path";
 import type { RebalanceDecision } from "../decision/types";
 import type { YieldData } from "../inputs/yield";
 import type { PortfolioData, Allocation } from "../inputs/portfolio";
+import type { KaminoExecResult } from "../execute/kamino";
 
 export const STORE_KEY_PREFIX = "investx_daily";
 
@@ -66,10 +67,13 @@ export interface RebalanceRecord {
   estimatedCostUsd: RebalanceDecision["estimatedCost"]; // gas+slippage estimate
   actualGasUsd: number | null; // real gas — only set on a real execution
   projectedGainUsd: number | null;
-  txHash: string | null; // only set on a real execution
-  inputCostUsdc: number; // x402 payments made fetching inputs this run
+  txHash: string | null; // Solana signature, only on a real send
+  chain?: string; // "solana" when execution was attempted
+  protocol?: string; // "kamino" when execution was attempted
+  execution?: KaminoExecResult; // full Kamino execution trace (read/simulate/send)
+  inputCostUsdc: number; // input fetches make no payment (DeFiLlama free, Nansen apiKey)
   evaluated: RebalanceDecision["evaluated"];
-  executed: false; // execution is intentionally not wired in this scope
+  executed: boolean; // true ONLY when a real mainnet send succeeded
 }
 
 export function todayDate(): string {
@@ -84,6 +88,7 @@ export function buildRecord(args: {
   yield: YieldData;
   portfolio: PortfolioData;
   inputCostUsdc: number;
+  execution?: KaminoExecResult;
 }): RebalanceRecord {
   const { decision, yield: yieldData, portfolio } = args;
   return {
@@ -131,10 +136,13 @@ export function buildRecord(args: {
     estimatedCostUsd: decision.estimatedCost,
     actualGasUsd: null,
     projectedGainUsd: decision.projectedGainUsd,
-    txHash: null,
+    txHash: args.execution?.txHash ?? null,
+    chain: args.execution?.attempted ? "solana" : undefined,
+    protocol: args.execution?.attempted ? "kamino" : undefined,
+    execution: args.execution,
     inputCostUsdc: args.inputCostUsdc,
     evaluated: decision.evaluated,
-    executed: false,
+    executed: args.execution?.executed ?? false,
   };
 }
 

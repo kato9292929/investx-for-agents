@@ -1,6 +1,6 @@
 // EndpointConfig is defined in config.ts.
 //
-// Carried over from x402-Autonomous-Agent so the generic caller (src/caller.ts)
+// Carried over from the upstream AA repo so the generic caller (src/caller.ts)
 // can stay byte-for-byte identical. InvestX adds `fullData` capture on every
 // input endpoint because the rebalance decision needs the parsed response, not
 // just a peek.

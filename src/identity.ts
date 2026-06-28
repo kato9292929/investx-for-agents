@@ -2,7 +2,7 @@
  * InvestX agent identity.
  *
  * This agent registers its OWN ERC-8004 agentId, fully separate from
- * x402-Autonomous-Agent's 55560. The decision log is tied to this id and to the
+ * the upstream AA repo's 55560. The decision log is tied to this id and to the
  * `investx_daily` store key — never to AA's identity or store.
  *
  * Resolution:
@@ -31,7 +31,7 @@ export function resolveIdentity(): AgentIdentity {
     // Guard against accidentally reusing AA's identity.
     if (registered.trim() === "55560") {
       throw new Error(
-        "[IDENTITY] INVESTX_AGENT_ID=55560 is x402-Autonomous-Agent's id. " +
+        "[IDENTITY] INVESTX_AGENT_ID=55560 is the upstream AA repo's id. " +
           "InvestX must register and use its OWN agentId."
       );
     }

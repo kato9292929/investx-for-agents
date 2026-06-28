@@ -7,7 +7,7 @@
  *
  * The protocol whitelist lives in mandate.yaml and is read at decision time;
  * here we only fix the chain filter. There are no payment/signing settings:
- * DeFiLlama is free and Nansen uses an apiKey header — no x402, no wallet keys.
+ * DeFiLlama is free and Nansen uses an apiKey header — no payment, no wallet keys.
  */
 
 // Chain filter applied to DeFiLlama pools.

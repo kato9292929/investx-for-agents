@@ -1,7 +1,7 @@
 /**
  * Minimal HTTP server.
  *
- * Adapted from x402-Autonomous-Agent's server (the World ID / Mode C approval
+ * Adapted from the upstream AA repo's server (the World ID / Mode C approval
  * flow is out of scope for InvestX and was removed). It exposes:
  *   - GET /health                       — liveness
  *   - GET /.well-known/agent-card.json  — ERC-8004 agent card (this agent's id)
@@ -29,7 +29,6 @@ function buildAgentCard(): Record<string, unknown> {
       "Non-custodial R&D agent that follows smart-money flows to rebalance self-funded DeFi yield, " +
       "and publishes a tamper-evident, move-by-move decision log tied to its own ERC-8004 agentId.",
     services: [{ name: "web", endpoint: baseUrl }],
-    x402Support: true,
     active: true,
     supportedTrust: ["crypto-economic"],
   };

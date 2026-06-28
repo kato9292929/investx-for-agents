@@ -139,6 +139,40 @@ agent card.
 Same shape as AA: `railway.json` handles build/start; node-cron fires at 21:00
 UTC daily; the HTTP server listens on `$PORT`.
 
+## Kamino execution (v1) — Railway で回す手順
+
+実行は既定オフ。`KAMINO_FROM_VAULT`/`KAMINO_TO_VAULT`/`SOLANA_RPC_URL` が無ければ
+判断＋記録のみで、現行の日次ループ（DeFiLlama/Nansen→判断→記録）は不変です。
+klend-sdk と @solana/kit は実行時のみ動的 import され、起動パスには載りません。
+
+対象は Kamino の Earn vault 間で、自分のウォレット（6JKV…）が保有する USDC を移動
+するだけ（外部送金なし・非カストディ）。Drift / Jupiter Lend は v1 では実行しません。
+
+### env（Railway Variables）
+
+| 変数 | 説明 |
+|---|---|
+| `SOLANA_KEYPAIR` | 6JKV… の id.json バイト（64要素の JSON 配列）。新規生成不可。起動時に address を assert |
+| `SOLANA_RPC_URL` | Solana mainnet RPC |
+| `KAMINO_FROM_VAULT` / `KAMINO_TO_VAULT` | 自分が保有する Kamino Earn vault のアドレス（移動元 / 先） |
+| `KAMINO_MOVE_USD` | 移動額 USDC（既定 1） |
+| `EXECUTE_ENABLED` | 既定 `false`。simulate が通るまで `false` のまま |
+
+### 回し方（Railway → Console）
+
+1. まず `EXECUTE_ENABLED=false` のまま実行：`node dist/index.js --run-now`
+2. ログで simulate 結果を確認：
+   - `[RUN] Kamino exec — attempted=… rpc=… simulated=ok|failed executed=false`
+   - `[RUN] Kamino note: …`
+   - `simulated=failed` → note のエラーで修正（送信されません）。`rpc=false` → RPC を確認（捏造せず「不明」記録）
+3. `simulated=ok` を確認できたら `EXECUTE_ENABLED=true` にして、もう一度 `node dist/index.js --run-now` を1回
+4. ログ `[RUN] Kamino note: mainnet 送信成立: <signature>` の `<signature>` を Solana エクスプローラ（solscan / explorer.solana.com）で確認
+5. 記録は `GET /api/decisions/latest`（または `data/decisions/investx-decisions.jsonl`）に
+   `executed:true` / `tx_hash` / `chain:"solana"` / `protocol:"kamino"` 付きで残ります
+
+鉄則: simulate が通るまで $1 送信しない（`EXECUTE_ENABLED` と simulate 必須ゲートで
+構造担保）。txHash がエクスプローラで確認できるまで「結線できた」とは言いません。
+
 ## License
 
 MIT

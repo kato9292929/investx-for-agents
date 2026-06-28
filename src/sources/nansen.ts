@@ -20,7 +20,7 @@
  * tokens, and must not claim pool-level smart money.
  *
  * Auth/billing errors are surfaced with their status (401 invalid key, 402
- * x402/MPP payment-required, 403 tier/credit, 429 rate). The key and raw body
+ * MPP payment-required, 403 tier/credit, 429 rate). The key and raw body
  * are never logged; credit headers are logged.
  *
  * Egress note: this host may be blocked in the Claude Code sandbox. Failures are
@@ -102,7 +102,7 @@ export async function fetchNansenHoldings(): Promise<NansenResult> {
         res.status === 401
           ? "invalid key"
           : res.status === 402
-            ? "payment required (x402/MPP)"
+            ? "payment required (MPP)"
             : res.status === 403
               ? "tier/credit limit"
               : res.status === 429

@@ -1,7 +1,7 @@
 /**
  * Tolerant object-tree helpers for defensive parsing.
  *
- * Adapted from x402-Autonomous-Agent's signal-extract walk. The live response
+ * Adapted from the upstream AA repo's signal-extract walk. The live response
  * shapes of the Yield / Portfolio endpoints are not confirmed (TODO schema), so
  * parsing searches the whole object tree for documented field names plus a few
  * obvious variants, and never invents a value when nothing is found.

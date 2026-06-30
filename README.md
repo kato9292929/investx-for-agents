@@ -145,14 +145,14 @@ UTC daily; the HTTP server listens on `$PORT`.
 判断＋記録のみで、現行の日次ループ（DeFiLlama/Nansen→判断→記録）は不変です。
 klend-sdk と @solana/kit は実行時のみ動的 import され、起動パスには載りません。
 
-対象は Kamino の Earn vault 間で、自分のウォレット（6JKV…）が保有する USDC を移動
+対象は Kamino の Earn vault 間で、自分のウォレット（6WyH…）が保有する USDC を移動
 するだけ（外部送金なし・非カストディ）。Drift / Jupiter Lend は v1 では実行しません。
 
 ### env（Railway Variables）
 
 | 変数 | 説明 |
 |---|---|
-| `SOLANA_KEYPAIR` | 6JKV… の id.json バイト（64要素の JSON 配列）。新規生成不可。起動時に address を assert |
+| `SOLANA_KEYPAIR` | 6WyH… の id.json バイト（64要素の JSON 配列）。新規生成不可。起動時に address を assert |
 | `SOLANA_RPC_URL` | Solana mainnet RPC |
 | `KAMINO_FROM_VAULT` / `KAMINO_TO_VAULT` | 自分が保有する Kamino Earn vault のアドレス（移動元 / 先） |
 | `KAMINO_MOVE_USD` | 移動額 USDC（既定 1） |

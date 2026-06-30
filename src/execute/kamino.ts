@@ -2,7 +2,7 @@
  * Kamino in-wallet rebalance executor (v1).
  *
  * Moves USDC from one Kamino Earn vault to another, both owned by the wallet
- * (6JKV...). Non-custodial: there is no external-transfer path — funds only
+ * (6WyH...). Non-custodial: there is no external-transfer path — funds only
  * move between the wallet's own Kamino positions.
  *
  * Flow: read vault state → build withdraw+deposit ixs → SIMULATE → (only if
@@ -12,7 +12,7 @@
  *   - EXECUTE_ENABLED=false (default) stops after simulate; never sends.
  *   - If simulate fails, we never send (and record the failure).
  *   - RPC unreachable / read failure is reported as unknown, never fabricated.
- *   - The signer must be 6JKV... (loadInvestxSigner asserts this).
+ *   - The signer must be 6WyH... (loadInvestxSigner asserts this).
  *
  * NOTE (verification): this environment cannot reach Solana mainnet RPC, so the
  * read/simulate/send paths below are type-checked but NOT runtime-verified here.
@@ -81,7 +81,7 @@ export async function executeKaminoRebalance(): Promise<KaminoExecResult> {
   base.toVault = cfg.KAMINO_TO_VAULT;
   base.moveUsd = cfg.KAMINO_MOVE_USD;
 
-  // Signer (asserts 6JKV...). Missing/invalid key → skip, recorded as unknown.
+  // Signer (asserts 6WyH...). Missing/invalid key → skip, recorded as unknown.
   let signer;
   try {
     signer = await loadInvestxSigner();

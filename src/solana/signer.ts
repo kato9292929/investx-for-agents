@@ -1,7 +1,7 @@
 /**
  * Solana signer for InvestX execution.
  *
- * Loads the EXISTING wallet (6JKV...) from SOLANA_KEYPAIR and converts it to a
+ * Loads InvestX's dedicated wallet from SOLANA_KEYPAIR and converts it to a
  * @solana/kit KeyPairSigner. It NEVER generates a new keypair — generating one
  * (e.g. generateKeyPairSigner) would sign with the wrong wallet. As a hard
  * safety check, the loaded address must equal EXPECTED_WALLET or startup fails.
@@ -13,8 +13,8 @@
  */
 import { createKeyPairSignerFromBytes, type KeyPairSigner } from "@solana/kit";
 
-/** The only wallet this agent is allowed to sign for. */
-export const EXPECTED_WALLET = "6JKVugbVRXR92sacDzgxBU6k6Mb9AAhxLbEy3DyWvEzA";
+/** The only wallet this agent is allowed to sign for (InvestX-dedicated, not AA's). */
+export const EXPECTED_WALLET = "6WyHsTB31JhNpXu8TXBnB6vUqmb1u54QYvu3zGF8wvyd";
 
 function parseKeypairBytes(raw: string): Uint8Array {
   const t = raw.trim();
